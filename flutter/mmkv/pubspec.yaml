@@ -17,7 +17,11 @@ dependencies:
     ^1.0.1
 #    path: ../mmkv_ios
   mmkv_android:
-    ^1.0.1
+    git:
+      url: https://github.com/viamichelin/MMKV.git
+      ref: 580ec4c77a8d45ee4760aa3c6c02cf328b4614d2
+      path: flutter/mmkv_android/
+    # ^1.0.1
 #    path: ../mmkv_android
   mmkv_platform_interface:
     ^1.0.0

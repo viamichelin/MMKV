@@ -254,10 +254,11 @@ packages:
   mmkv_android:
     dependency: "direct main"
     description:
-      name: mmkv_android
-      sha256: def569ef710c24018b6afb8ff691cbbf22cacda249d6cfc2ce12df38db112623
-      url: "https://pub.dev"
-    source: hosted
+      path: "flutter/mmkv_android"
+      ref: "580ec4c77a8d45ee4760aa3c6c02cf328b4614d2"
+      resolved-ref: "580ec4c77a8d45ee4760aa3c6c02cf328b4614d2"
+      url: "https://github.com/viamichelin/MMKV.git"
+    source: git
     version: "1.0.1"
   mmkv_ios:
     dependency: "direct main"

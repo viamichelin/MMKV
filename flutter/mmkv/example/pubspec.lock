@@ -133,17 +133,19 @@ packages:
   mmkv_android:
     dependency: transitive
     description:
-      name: mmkv_android
-      sha256: def569ef710c24018b6afb8ff691cbbf22cacda249d6cfc2ce12df38db112623
-      url: "https://pub.dev"
-    source: hosted
+      path: "flutter/mmkv_android"
+      ref: "580ec4c77a8d45ee4760aa3c6c02cf328b4614d2"
+      resolved-ref: "580ec4c77a8d45ee4760aa3c6c02cf328b4614d2"
+      url: "https://github.com/viamichelin/MMKV.git"
+    source: git
     version: "1.0.1"
   mmkv_ios:
     dependency: transitive
     description:
-      path: "../../mmkv_ios"
-      relative: true
-    source: path
+      name: mmkv_ios
+      sha256: "45a3696e35fa762f25e3dadb8d878f45aa3f327edcf4a0f4f59bbd54f37d3056"
+      url: "https://pub.dev"
+    source: hosted
     version: "1.0.1"
   mmkv_platform_interface:
     dependency: transitive
