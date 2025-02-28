@@ -21,6 +21,7 @@
 #import "MMKVDemo-Swift.h"
 #import "ViewController+TestCaseBad.h"
 #import <MMKV/MMKV.h>
+#import "TestMMKVCpp.hpp"
 
 @interface TestNSArchive : NSObject <NSSecureCoding>
 @property(nonatomic, strong) NSString *m_username;
@@ -73,6 +74,7 @@
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
 
+    [self functionTestCpp];
     [self funcionalTest:NO];
     [self testReKey];
     [self testImportFromUserDefault];
@@ -98,6 +100,7 @@
 
     [self testClearAllWithKeepingSpace];
     [self testRemoveStorage];
+    [self testReadOnly:NO];
 
     m_loops = 10000;
     m_arrStrings = [NSMutableArray arrayWithCapacity:m_loops];
@@ -222,9 +225,18 @@
     [mmkv close];
 }
 
+- (void)functionTestCpp {
+    functionalTest(false);
+}
+
 - (void)testMMKV:(NSString *)mmapID withCryptKey:(NSData *)cryptKey decodeOnly:(BOOL)decodeOnly {
     MMKV *mmkv = [MMKV mmkvWithID:mmapID cryptKey:cryptKey];
+    [ViewController testMMKV:mmkv decodeOnly:decodeOnly];
 
+    NSLog(@"isFileValid[%@]: %d", mmapID, [MMKV isFileValid:mmapID]);
+}
+
++ (void)testMMKV:(MMKV *)mmkv decodeOnly:(BOOL)decodeOnly {
     if (!decodeOnly) {
         [mmkv setInt32:-1024 forKey:@"int32"];
     }
@@ -280,7 +292,6 @@
 
     [mmkv removeValuesForKeys:@[ @"int", @"long" ]];
     [mmkv clearMemoryCache];
-    NSLog(@"isFileValid[%@]: %d", mmapID, [MMKV isFileValid:mmapID]);
 }
 
 - (void)testReKey {
@@ -903,12 +914,18 @@ MMKV *getMMKVForBatchTest() {
 
         [mmkv0 setString:value forKey:key];
         auto v2 = [mmkv0 getStringForKey:key];
-        NSLog(@"value = %@", v2);
+        if (![v2 isEqualToString:value]) {
+            NSLog(@"value = %@", v2);
+            abort();
+        }
         [mmkv0 removeValueForKey:key];
 
         [mmkv0 setString:value forKey:key2];
         v2 = [mmkv0 getStringForKey:key2];
-        NSLog(@"value = %@", v2);
+        if (![v2 isEqualToString:value]) {
+            NSLog(@"value = %@", v2);
+            abort();
+        }
         [mmkv0 removeValueForKey:key2];
 
         int len = 10000;
@@ -926,35 +943,65 @@ MMKV *getMMKVForBatchTest() {
         // rewrite
         [mmkv0 setString:@"OK" forKey:key];
         auto v4 = [mmkv0 getStringForKey:key];
-        NSLog(@"value = %@", v4);
+        if (![v4 isEqualToString:@"OK"]) {
+            NSLog(@"value = %@", v2);
+            abort();
+        }
 
-        [mmkv0 setInt32:12345 forKey:@"int"];
+        [mmkv0 setInt32:12345 forKey:key];
         auto v5 = [mmkv0 getInt32ForKey:key];
-        NSLog(@"int value = %d", v5);
-        [mmkv0 removeValueForKey:@"int"];
+        if (v5 != 12345) {
+            NSLog(@"value = %d", v5);
+            abort();
+        }
+        [mmkv0 removeValueForKey:key];
 
         [mmkv0 clearAll];
     }
 
-    {
-        NSString *crypt = [NSString stringWithFormat:@"fastestCrypt"];
-        auto mmkv0 = [MMKV mmkvWithID:@"overrideCryptTest" cryptKey:[crypt dataUsingEncoding:NSUTF8StringEncoding] mode:MMKVSingleProcess];
-        NSString *key = [NSString stringWithFormat:@"hello"];
-        NSString *key2 = [NSString stringWithFormat:@"hello2"];
-        NSString *value = [NSString stringWithFormat:@"cryptworld"];
+    auto encryptionTestKV = [](NSString* key, NSString* value) {
+        NSData *crypt = [@"fastestCrypt" dataUsingEncoding:NSUTF8StringEncoding];
+        auto mmkv0 = [MMKV mmkvWithID:@"overrideCryptTest" cryptKey:crypt];
 
         [mmkv0 setString:value forKey:key];
         auto v2 = [mmkv0 getStringForKey:key];
-        NSLog(@"value = %@", v2);
+        if (![value isEqualToString:v2]) {
+            NSLog(@"value = %@, result = %@", value, v2);
+            abort();
+        }
 
+        [mmkv0 close];
+        mmkv0 = nil;
+        mmkv0 = [MMKV mmkvWithID:@"overrideCryptTest" cryptKey:crypt mode:MMKVSingleProcess];
+        v2 = [mmkv0 getStringForKey:key];
+        if (![value isEqualToString:v2]) {
+            NSLog(@"value = %@, result = %@", value, v2);
+            abort();
+        }
+        [mmkv0 setString:value forKey:key];
+        v2 = [mmkv0 getStringForKey:key];
+        if (![value isEqualToString:v2]) {
+            NSLog(@"value = %@, result = %@", value, v2);
+            abort();
+        }
         [mmkv0 removeValueForKey:key];
-        [mmkv0 setString:value forKey:key2];
-        v2 = [mmkv0 getStringForKey:key2];
-        NSLog(@"value = %@", v2);
-        [mmkv0 removeValueForKey:key2];
+    };
 
-        [mmkv0 clearAll];
-    }
+    auto encryptionTest = [&](NSString* value) {
+        NSString *key = [NSString stringWithFormat:@"hello"];
+        NSString *key2 = [NSString stringWithFormat:@"hello2"];
+
+        encryptionTestKV(key, value);
+        encryptionTestKV(key2, value);
+    };
+    // [MMKV removeStorage:@"overrideCryptTest" rootPath:nil];
+
+    // test small value
+    encryptionTest(@"cryptworld");
+    // test medium value
+    encryptionTest(@"An efficient, small mobile key-value storage framework developed by WeChat. Works on Android, iOS, macOS, Windows, and POSIX.");
+    // test large value
+    encryptionTest(@"An efficient, small mobile key-value storage framework developed by WeChat. Works on Android, iOS, macOS, Windows, and POSIX. MMKV is an efficient, small, easy-to-use mobile key-value storage framework used in the WeChat application. It's currently available on Android, iOS/macOS, Windows, POSIX and HarmonyOS NEXT.");
 }
 
 - (void)onlyOneKeyTest {
@@ -1019,8 +1066,8 @@ MMKV *getMMKVForBatchTest() {
 
         auto mmkv1 = [MMKV mmkvWithID:@"onlyOneKeyCryptTest" cryptKey:[crypt dataUsingEncoding:NSUTF8StringEncoding] mode:MMKVSingleProcess];
         auto v4 = [mmkv1 getStringForKey:key];
-        NSLog(@"value = %@", v4);
         if (![v3 isEqualToString:v4]) {
+            NSLog(@"value = %@", v4);
             abort();
         }
 
@@ -1028,7 +1075,10 @@ MMKV *getMMKVForBatchTest() {
             NSString *value2 = [NSString stringWithFormat:@"cryptworld_%d", i];
             [mmkv1 setString:value2 forKey:key];
             auto v2 = [mmkv1 getStringForKey:key];
-            NSLog(@"value = %@", v2);
+            if (![v2 isEqualToString:value2]) {
+                NSLog(@"value = %@", v2);
+                abort();
+            }
         }
     }
 }
@@ -1139,6 +1189,23 @@ MMKV *getMMKVForBatchTest() {
         abort();
     }
     // }
+}
+
+- (void)testReadOnly:(BOOL) isForPrepare {
+    auto name = @"testReadOnly";
+    NSData *key_1 = [@"Key_ReadOnly" dataUsingEncoding:NSUTF8StringEncoding];
+    if (isForPrepare) {
+        [self testMMKV:name withCryptKey:key_1 decodeOnly:NO];
+    } else {
+        auto mmkvPath = [[NSBundle mainBundle] pathForResource:name ofType:nil];
+        auto mmkvDir = [mmkvPath stringByDeletingLastPathComponent];
+        auto mmkv = [MMKV mmkvWithID:name cryptKey:key_1 rootPath:mmkvDir mode:MMKVReadOnly expectedCapacity:0];
+
+        [ViewController testMMKV:mmkv decodeOnly:YES];
+
+        // also check if it tolerate update operations without crash
+        [ViewController testMMKV:mmkv decodeOnly:NO];
+    }
 }
 
 @end

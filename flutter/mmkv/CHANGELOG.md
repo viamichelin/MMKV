@@ -1,4 +1,49 @@
 # MMKV for Flutter Change Log
+## v2.1.0 / 2025-02-18
+* **Breaking change**: Migrate legacy MMKV in a custom directory to normal MMKV. Historically Android/OHOS mistakenly use mmapKey as mmapID, which will be problematic with the `NameSpace` feature. Starting from v2.1.0, MMKV will try to migrate them back to normal when possible.  
+  It's highly recommended that you **upgrade to v2.0.2 first** with **forward support** of normal MMKV in a custom directory.
+* Improve inter-process locking by using `F_OFD_SETLK` instead of `F_SETLK` in Android/OHOS.
+* Improve directory creation on `ReadOnly` mode.
+* Add protection from bad disk records of MMKV files.
+* Fix FileLock not being unlocked on destruction.
+
+## v2.0.2 / 2024-12-27
+* Add version limitation of < v2.1.0 on MMKV platform plugins.
+
+## v2.0.1 / 2024-10-25
+* Fix breaking changes on platform interface package.
+
+## v1.3.10 / 2024-10-25
+* Rollback some breaking changes on platform interface package.
+
+## v2.0.0 / 2024-10-21
+* Support read-only mode.
+* Add add log/error/content-change callback for Flutter & ArtTS
+* Bump Android minSdkVersion to 23.
+* Drop 32-bit arch support.
+
+## v1.3.9 / 2024-07-26
+This will be **the last LTS release of MMKV for Flutter**.
+* Modify the dependency of native lib in a way that no Dart package update is needed for any LTS release in the future.
+* Fix a data corruption bug on an encrypted MMKV with only one key value stored.
+* Make encryption more resilient from brute force cracking.
+* Fix a bug that pthread_mutex is not being destroyed correctly.
+* Android: Use an alternative way to get the process name to avoid potential App review issues.
+* Android: Upgrade to NDK 26.3.11579264.
+
+## v1.3.8 / 2024-07-12
+* Add support for **HarmonyOS NEXT**.
+
+## v1.3.7 / 2024-07-08
+**Sync with Latest Android Native Binary:**
+
+This Long Term Support (LTS) release primarily reintroduces support for the ARMv7 architecture and lowers the minimum SDK version requirement to 21. Please note that only critical bug fixes will be applied to the 1.3.x series. New features will be introduced in version 2.0 and later, which will discontinue support for 32-bit architectures and raise the minimum SDK version requirement to 23.
+
+## v1.3.6 / 2024-07-05
+* Android: MMKV will try to load libmmkv.so before Dart code, to reduce the error of loading library in Android.
+* Android: Use the latest ashmem API if possible.
+* Android: Use the latest API to get the device API level.
+
 ## v1.3.5 / 2024-04-24
 * Migrate to federated plugins to avoid the iOS rename headache. From now on, no more renaming from `mmkv` to `mmkvflutter` is needed.
 * Bump iOS Deployment Target to iOS 12.

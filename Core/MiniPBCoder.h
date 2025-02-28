@@ -24,12 +24,15 @@
 
 #include "MMKVPredef.h"
 
-#include "KeyValueHolder.h"
 #include "MMBuffer.h"
-#include "MMBuffer.h"
-#include "MMKVLog.h"
-#include "PBUtility.h"
 #include <cstdint>
+#ifdef MMKV_HAS_CPP20
+#  include <span>
+#  define MMKV_STRING_CONTAINER std::span<const std::string>
+#else
+#  define MMKV_STRING_CONTAINER std::vector<std::string>
+#endif
+
 
 namespace mmkv {
 
@@ -39,7 +42,7 @@ class AESCrypt;
 class CodedInputDataCrypt;
 struct PBEncodeItem;
 
-class MiniPBCoder {
+class MMKV_EXPORT MiniPBCoder {
     const MMBuffer *m_inputBuffer = nullptr;
     CodedInputData *m_inputData = nullptr;
     CodedInputDataCrypt *m_inputDataDecrpt = nullptr;
@@ -70,12 +73,30 @@ class MiniPBCoder {
     void decodeOneMap(MMKVMapCrypt &dic, size_t position, bool greedy);
 #endif
 
-#ifndef MMKV_APPLE
     size_t prepareObjectForEncode(const std::string &str);
-    size_t prepareObjectForEncode(const std::vector<std::string> &vector);
-
+    size_t prepareObjectForEncode(const MMKV_STRING_CONTAINER &vector);
     std::vector<std::string> decodeOneVector();
-#else
+#ifdef MMKV_HAS_CPP20
+    size_t prepareObjectForEncode(const std::span<const int32_t> &vec);
+    size_t prepareObjectForEncode(const std::span<const uint32_t> &vec);
+    size_t prepareObjectForEncode(const std::span<const int64_t> &vec);
+    size_t prepareObjectForEncode(const std::span<const uint64_t> &vec);
+
+    bool decodeOneVector(std::vector<bool> &result);
+    bool decodeOneVector(std::vector<int32_t> &result);
+    bool decodeOneVector(std::vector<uint32_t> &result);
+    bool decodeOneVector(std::vector<int64_t> &result);
+    bool decodeOneVector(std::vector<uint64_t> &result);
+    bool decodeOneVector(std::vector<float> &result);
+    bool decodeOneVector(std::vector<double> &result);
+
+    // special case for fixed size types
+    MMBuffer getEncodeData(const std::vector<bool> &obj);
+    MMBuffer getEncodeData(const std::span<const float> &obj);
+    MMBuffer getEncodeData(const std::span<const double> &obj);
+#endif // MMKV_HAS_CPP20
+
+#if defined(MMKV_APPLE) && defined(__OBJC__)
     // NSString, NSData, NSDate
     size_t prepareObjectForEncode(__unsafe_unretained NSObject *obj);
 #endif
@@ -83,16 +104,8 @@ class MiniPBCoder {
 public:
     template <typename T>
     static MMBuffer encodeDataWithObject(const T &obj) {
-        try {
-            MiniPBCoder pbcoder;
-            return pbcoder.getEncodeData(obj);
-        } catch (const std::exception &exception) {
-            MMKVError("%s", exception.what());
-            return MMBuffer();
-        } catch (...) {
-            MMKVError("encode fail");
-            return MMBuffer();
-        }
+        MiniPBCoder pbCoder;
+        return pbCoder.getEncodeData(obj);
     }
 
     // opt encoding a single MMBuffer
@@ -112,9 +125,14 @@ public:
     static void greedyDecodeMap(MMKVMapCrypt &dic, const MMBuffer &oData, AESCrypt *crypter, size_t position = 0);
 #endif // MMKV_DISABLE_CRYPT
 
-#ifndef MMKV_APPLE
     static std::vector<std::string> decodeVector(const MMBuffer &oData);
-#else
+
+    template <typename T>
+    static bool decodeVector(const MMBuffer &oData, std::vector<T> &result) {
+        MiniPBCoder oCoder(&oData);
+        return oCoder.decodeOneVector(result);
+    }
+#if defined(MMKV_APPLE) && defined(__OBJC__)
     // NSString, NSData, NSDate
     static NSObject *decodeObject(const MMBuffer &oData, Class cls);
 

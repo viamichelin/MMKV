@@ -29,6 +29,8 @@
 #ifdef MMKV_ANDROID
 MMKVPath_t ashmemMMKVPathWithID(const MMKVPath_t &mmapID);
 
+long long getFileModifyTimeInMS(const char *path);
+
 namespace mmkv {
 extern int g_android_api;
 extern std::string g_android_tmpDir;
@@ -47,6 +49,7 @@ enum class OpenFlag : uint32_t {
     Excel = 1 << 3, // fail if Create is set but the file already exist
     Truncate = 1 << 4,
 };
+constexpr uint32_t OpenFlagRWMask = 0x3; // mask for Read Write mode
 
 static inline OpenFlag operator | (OpenFlag left, OpenFlag right) {
     return static_cast<OpenFlag>(static_cast<uint32_t>(left) | static_cast<uint32_t>(right));
@@ -54,6 +57,10 @@ static inline OpenFlag operator | (OpenFlag left, OpenFlag right) {
 
 static inline bool operator & (OpenFlag left, OpenFlag right) {
     return ((static_cast<uint32_t>(left) & static_cast<uint32_t>(right)) != 0);
+}
+
+static inline OpenFlag operator & (OpenFlag left, uint32_t right) {
+    return static_cast<OpenFlag>(static_cast<uint32_t>(left) & right);
 }
 
 template <typename T>
@@ -109,6 +116,7 @@ class MemoryFile {
 #endif
     void *m_ptr;
     size_t m_size;
+    const bool m_readOnly;
 
     bool mmap();
 
@@ -116,9 +124,9 @@ class MemoryFile {
 
 public:
 #ifndef MMKV_ANDROID
-    explicit MemoryFile(MMKVPath_t path, size_t expectedCapacity = 0);
+    explicit MemoryFile(MMKVPath_t path, size_t expectedCapacity = 0, bool readOnly = false);
 #else
-    MemoryFile(MMKVPath_t path, size_t size, FileType fileType, size_t expectedCapacity = 0);
+    MemoryFile(MMKVPath_t path, size_t size, FileType fileType, size_t expectedCapacity = 0, bool readOnly = false);
     explicit MemoryFile(MMKVFileHandle_t ashmemFD);
 
     const FileType m_fileType;
@@ -165,6 +173,7 @@ extern bool isFileExist(const MMKVPath_t &nsFilePath);
 extern MMBuffer *readWholeFile(const MMKVPath_t &path);
 extern bool zeroFillFile(MMKVFileHandle_t fd, size_t startPos, size_t size);
 extern size_t getPageSize();
+extern MMKVPath_t absolutePath(const MMKVPath_t &path);
 
 extern bool tryAtomicRename(const MMKVPath_t &srcPath, const MMKVPath_t &dstPath);
 
@@ -175,6 +184,12 @@ extern bool copyFile(const MMKVPath_t &srcPath, const MMKVPath_t &dstPath);
 extern bool copyFileContent(const MMKVPath_t &srcPath, const MMKVPath_t &dstPath);
 extern bool copyFileContent(const MMKVPath_t &srcPath, MMKVFileHandle_t dstFD);
 extern bool copyFileContent(const MMKVPath_t &srcPath, MMKVFileHandle_t dstFD, bool needTruncate);
+
+//#if defined(MMKV_APPLE) || defined(MMKV_WIN32)
+bool isDiskOfMMAPFileCorrupted(MemoryFile *file, bool &needReportReadFail);
+//#endif
+
+bool deleteFile(const MMKVPath_t &path);
 
 enum WalkType : uint32_t {
     WalkFile = 1 << 0,

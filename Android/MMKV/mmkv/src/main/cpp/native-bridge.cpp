@@ -18,17 +18,18 @@
  * limitations under the License.
  */
 
-#include "MMKVPredef.h"
+#include <MMKV/MMKVPredef.h>
 
 #ifdef MMKV_ANDROID
 
-#    include "MMBuffer.h"
-#    include "MMKV.h"
-#    include "MMKVLog.h"
-#    include "MemoryFile.h"
+#    include <MMKV/MMBuffer.h>
+#    include <MMKV/MMKV.h>
+#    include <MMKV/MMKVLog.h>
+#    include <MMKV/MemoryFile.h>
 #    include <cstdint>
 #    include <jni.h>
 #    include <string>
+#    include <android/api-level.h>
 
 using namespace std;
 using namespace mmkv;
@@ -108,23 +109,13 @@ extern "C" JNIEXPORT JNICALL jint JNI_OnLoad(JavaVM *vm, void *reserved) {
         InternalLogError("fail to get method id for onContentChangedByOuterProcess()");
     }
 
-    // get current API level by accessing android.os.Build.VERSION.SDK_INT
-    jclass versionClass = env->FindClass("android/os/Build$VERSION");
-    if (versionClass) {
-        jfieldID sdkIntFieldID = env->GetStaticFieldID(versionClass, "SDK_INT", "I");
-        if (sdkIntFieldID) {
-            g_android_api = env->GetStaticIntField(versionClass, sdkIntFieldID);
+    // Note: If you use NDK r23 or older, you can get API level by accessing android.os.Build.VERSION.SDK_INT
+    g_android_api = android_get_device_api_level();
 #ifdef MMKV_STL_SHARED
-            InternalLogInfo("current API level = %d, libc++_shared=%d", g_android_api, MMKV_STL_SHARED);
+    InternalLogInfo("current API level = %d, libc++_shared=%d", g_android_api, MMKV_STL_SHARED);
 #else
-            InternalLogInfo("current API level = %d, libc++_shared=?", g_android_api);
+    InternalLogInfo("current API level = %d, libc++_shared=?", g_android_api);
 #endif
-        } else {
-            InternalLogError("fail to get field id android.os.Build.VERSION.SDK_INT");
-        }
-    } else {
-        InternalLogError("fail to get class android.os.Build.VERSION");
-    }
 
     return JNI_VERSION_1_6;
 }
@@ -1073,6 +1064,33 @@ MMKV_JNI void clearAllWithKeepingSpace(JNIEnv *env, jobject instance) {
     }
 }
 
+MMKV_JNI jboolean isMultiProcess(JNIEnv *env, jobject instance) {
+    MMKV *kv = getMMKV(env, instance);
+    if (kv) {
+        return (jboolean) kv->isMultiProcess();
+    }
+    return jboolean(false);
+}
+
+MMKV_JNI jboolean isReadOnly(JNIEnv *env, jobject instance) {
+    MMKV *kv = getMMKV(env, instance);
+    if (kv) {
+        return (jboolean) kv->isReadOnly();
+    }
+    return jboolean(false);
+}
+
+MMKV_JNI jboolean getNameSpace(JNIEnv *env, jclass type, jstring rootPath) {
+    if (rootPath) {
+        auto root = jstring2string(env, rootPath);
+        if (!root.empty()) {
+            MMKV::nameSpace(root);
+            return (jboolean) true;
+        }
+    }
+    return (jboolean) false;
+}
+
 } // namespace mmkv
 
 static JNINativeMethod g_methods[] = {
@@ -1155,6 +1173,9 @@ static JNINativeMethod g_methods[] = {
     {"isEncryptionEnabled", "()Z", (void *) mmkv::isEncryptionEnabled},
     {"isExpirationEnabled", "()Z", (void *) mmkv::isExpirationEnabled},
     {"clearAllWithKeepingSpace", "()V", (void *) mmkv::clearAllWithKeepingSpace},
+    {"isMultiProcess", "()Z", (void *) mmkv::isMultiProcess},
+    {"isReadOnly", "()Z", (void *) mmkv::isReadOnly},
+    {"getNameSpace", "(Ljava/lang/String;)Z", (void *)mmkv::getNameSpace},
 };
 
 static int registerNativeMethods(JNIEnv *env, jclass cls) {

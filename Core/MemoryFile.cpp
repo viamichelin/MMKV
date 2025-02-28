@@ -36,8 +36,10 @@
 #    include <dirent.h>
 #    include <cstring>
 #    include <unistd.h>
+#    include <filesystem>
 
 using namespace std;
+namespace fs = std::filesystem;
 
 namespace mmkv {
 
@@ -50,7 +52,10 @@ File::File(MMKVPath_t path, OpenFlag flag) : m_path(std::move(path)), m_fd(-1), 
     open();
 }
 
-MemoryFile::MemoryFile(MMKVPath_t path, size_t expectedCapacity) : m_diskFile(std::move(path), OpenFlag::ReadWrite | OpenFlag::Create), m_ptr(nullptr), m_size(0) {
+MemoryFile::MemoryFile(MMKVPath_t path, size_t expectedCapacity, bool readOnly)
+    : m_diskFile(std::move(path), readOnly ? OpenFlag::ReadOnly : (OpenFlag::ReadWrite | OpenFlag::Create))
+    , m_ptr(nullptr), m_size(0), m_readOnly(readOnly)
+{
     reloadFromFile(expectedCapacity);
 }
 #    endif // !defined(MMKV_ANDROID)
@@ -61,7 +66,7 @@ void tryResetFileProtection(const string &path);
 
 static int OpenFlag2NativeFlag(OpenFlag flag) {
     int native = O_CLOEXEC;
-    if (flag & OpenFlag::ReadWrite) {
+    if ((flag & OpenFlagRWMask) == OpenFlag::ReadWrite) {
         native |= O_RDWR;
     } else if (flag & OpenFlag::ReadOnly) {
         native |= O_RDONLY;
@@ -92,16 +97,16 @@ bool File::open() {
     }
     m_fd = ::open(m_path.c_str(), OpenFlag2NativeFlag(m_flag), S_IRWXU);
     if (!isFileValid()) {
-        MMKVError("fail to open [%s], %d(%s)", m_path.c_str(), errno, strerror(errno));
+        MMKVError("fail to open [%s], flag 0x%x, %d(%s)", m_path.c_str(), m_flag, errno, strerror(errno));
         return false;
     }
-    MMKVInfo("open fd[%p], %s", m_fd, m_path.c_str());
+    MMKVInfo("open fd[%d], flag 0x%x, %s", m_fd, m_flag, m_path.c_str());
     return true;
 }
 
 void File::close() {
     if (isFileValid()) {
-        MMKVInfo("closing fd[%p], %s", m_fd, m_path.c_str());
+        MMKVInfo("closing fd[%d], %s", m_fd, m_path.c_str());
         if (::close(m_fd) == 0) {
             m_fd = -1;
         } else {
@@ -127,6 +132,10 @@ bool MemoryFile::truncate(size_t size) {
     }
     if (size == m_size) {
         return true;
+    }
+    if (m_readOnly) {
+        // truncate readonly file not allow
+        return false;
     }
 #    ifdef MMKV_ANDROID
     if (m_diskFile.m_fileType == MMFILE_TYPE_ASHMEM) {
@@ -182,6 +191,10 @@ bool MemoryFile::truncate(size_t size) {
 }
 
 bool MemoryFile::msync(SyncFlag syncFlag) {
+    if (m_readOnly) {
+        // there's no point in msync() readonly memory
+        return true;
+    }
     if (m_ptr) {
         auto ret = ::msync(m_ptr, m_size, syncFlag ? MS_SYNC : MS_ASYNC);
         if (ret == 0) {
@@ -194,9 +207,10 @@ bool MemoryFile::msync(SyncFlag syncFlag) {
 
 bool MemoryFile::mmap() {
     auto oldPtr = m_ptr;
-    m_ptr = (char *) ::mmap(m_ptr, m_size, PROT_READ | PROT_WRITE, MAP_SHARED, m_diskFile.m_fd, 0);
+    auto mode = m_readOnly ? PROT_READ : (PROT_READ | PROT_WRITE);
+    m_ptr = (char *) ::mmap(m_ptr, m_size, mode, MAP_SHARED, m_diskFile.m_fd, 0);
     if (m_ptr == MAP_FAILED) {
-        MMKVError("fail to mmap [%s], %s", m_diskFile.m_path.c_str(), strerror(errno));
+        MMKVError("fail to mmap [%s], mode 0x%x, %s", m_diskFile.m_path.c_str(), mode, strerror(errno));
         m_ptr = nullptr;
         return false;
     }
@@ -226,7 +240,7 @@ void MemoryFile::reloadFromFile(size_t expectedCapacity) {
         mmkv::getFileSize(m_diskFile.m_fd, m_size);
         size_t expectedSize = std::max<size_t>(DEFAULT_MMAP_SIZE, roundUp<size_t>(expectedCapacity, DEFAULT_MMAP_SIZE));
         // round up to (n * pagesize)
-        if (m_size < expectedSize || (m_size % DEFAULT_MMAP_SIZE != 0)) {
+        if (!m_readOnly && (m_size < expectedSize || (m_size % DEFAULT_MMAP_SIZE != 0))) {
             InterProcessLock exclusiveLock(&fileLock, ExclusiveLockType);
             SCOPED_LOCK(&exclusiveLock);
 
@@ -240,7 +254,9 @@ void MemoryFile::reloadFromFile(size_t expectedCapacity) {
             }
         }
 #    ifdef MMKV_IOS
-        tryResetFileProtection(m_diskFile.m_path);
+        if (!m_readOnly) {
+            tryResetFileProtection(m_diskFile.m_path);
+        }
 #    endif
     }
 }
@@ -404,6 +420,13 @@ size_t getPageSize() {
     return static_cast<size_t>(getpagesize());
 }
 
+extern MMKVPath_t absolutePath(const MMKVPath_t &path) {
+    fs::path relative_path(path);
+    fs::path absolute_path = fs::absolute(relative_path);
+    fs::path normalized = fs::weakly_canonical(absolute_path);
+    return normalized.string();
+}
+
 #ifndef MMKV_APPLE
 
 static pair<MMKVPath_t, int> createUniqueTempFile(const char *prefix) {
@@ -506,6 +529,13 @@ bool copyFile(const MMKVPath_t &srcPath, const MMKVPath_t &dstPath) {
     if (copyFileContent(srcPath, tmpFD, false)) {
         MMKVInfo("copyfile [%s] to [%s]", srcPath.c_str(), tmpPath.c_str());
         renamed = tryAtomicRename(tmpPath, dstPath);
+        if (!renamed) {
+            MMKVInfo("rename fail, try copy file content instead.");
+            if (copyFileContent(tmpPath, dstPath)) {
+                renamed = true;
+                ::unlink(tmpPath.c_str());
+            }
+        }
         if (renamed) {
             MMKVInfo("copyfile [%s] to [%s] finish.", srcPath.c_str(), dstPath.c_str());
         }
@@ -556,7 +586,7 @@ void walkInDir(const MMKVPath_t &dirPath, WalkType type, const function<void(con
 
     while (auto child = readdir(dir)) {
         if ((child->d_type & DT_REG) && (type & WalkFile)) {
-#ifdef _DIRENT_HAVE_D_NAMLEN
+#if defined(_DIRENT_HAVE_D_NAMLEN) || defined(__APPLE__)
             stpcpy(childPath + folderPathLength, child->d_name);
             childPath[folderPathLength + child->d_namlen] = 0;
 #else
@@ -564,7 +594,7 @@ void walkInDir(const MMKVPath_t &dirPath, WalkType type, const function<void(con
 #endif
             walker(childPath, WalkFile);
         } else if ((child->d_type & DT_DIR) && (type & WalkFolder)) {
-#ifdef _DIRENT_HAVE_D_NAMLEN
+#if defined(_DIRENT_HAVE_D_NAMLEN) || defined(__APPLE__)
             if ((child->d_namlen == 1 && child->d_name[0] == '.') ||
                 (child->d_namlen == 2 && child->d_name[0] == '.' && child->d_name[1] == '.')) {
                 continue;
@@ -583,6 +613,43 @@ void walkInDir(const MMKVPath_t &dirPath, WalkType type, const function<void(con
 
     closedir(dir);
 }
+
+bool deleteFile(const MMKVPath_t &path) {
+    auto filename = path.c_str();
+    if (::unlink(filename) != 0) {
+        auto err = errno;
+        MMKVError("fail to delete file [%s], %d (%s)", filename, err, strerror(err));
+        return false;
+    }
+    return true;
+}
+
+#ifndef MMKV_APPLE
+bool isDiskOfMMAPFileCorrupted(MemoryFile *file, bool &needReportReadFail) {
+    // TODO: maybe we need reading a larger chunk than 4 byte in Android/Linux
+    uint32_t info;
+    auto fd = file->getFd();
+    auto path = file->getPath().c_str();
+
+    auto oldPos = lseek(fd, 0, SEEK_CUR);
+    lseek(fd, 0, SEEK_SET);
+    auto size = read(fd, &info, sizeof(info));
+    auto err = errno;
+    lseek(fd, oldPos, SEEK_SET);
+
+    if (size <= 0) {
+        needReportReadFail = true;
+        MMKVError("fail to read [%s] from fd [%d], errno: %d (%s)", path, fd, err, strerror(err));
+        if (err == EIO || err == EILSEQ || err == EINVAL || err == ENXIO) {
+            MMKVWarning("file fail to read, consider it illegal, delete now: [%s]", path);
+            return true;
+        }
+    }
+    // we don't rollout mayfly fd (yet)
+    // file->cleanMayflyFD();
+    return false;
+}
+#endif
 
 } // namespace mmkv
 

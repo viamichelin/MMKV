@@ -110,12 +110,18 @@ bool disableCompareBeforeSet(void *handle);
 
 int32_t pageSize();
 const char *version();
+const char *getRootDir();
 
 void setWantsLogRedirect(bool redirect);
 void setWantsErrorHandle(bool errorHandle);
 void setWantsContentChangeHandle(bool contentChange);
 
 bool removeStorage(GoStringWrap_t mmapID, GoStringWrap_t rootPath);
+
+bool isMultiProcess(void *handle);
+bool isReadOnly(void *handle);
+
+bool getNameSpace(GoStringWrap_t rootPath);
 
 #ifdef __cplusplus
 }

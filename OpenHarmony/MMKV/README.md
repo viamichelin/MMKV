@@ -1,6 +1,6 @@
 [![license](https://img.shields.io/badge/license-BSD_3-brightgreen.svg?style=flat)](https://github.com/Tencent/MMKV/blob/master/LICENSE.TXT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Tencent/MMKV/pulls)
-[![Release Version](https://img.shields.io/badge/release-1.3.5-brightgreen.svg)](https://github.com/Tencent/MMKV/releases)
+[![Release Version](https://img.shields.io/badge/release-2.0.2-brightgreen.svg)](https://github.com/Tencent/MMKV/releases)
 [![Platform](https://img.shields.io/badge/Platform-%20HarmonyOS%20NEXT-brightgreen.svg)](https://github.com/Tencent/MMKV/wiki/home)
 
 MMKV is an **efficient**, **small**, **easy-to-use** mobile key-value storage framework used in the WeChat application. It's now available on **HarmonyOS NEXT**.
@@ -23,7 +23,7 @@ MMKV is an **efficient**, **small**, **easy-to-use** mobile key-value storage fr
 
 ### Prerequisites
 
-* Apps using MMKV can target: HarmonyOS Next (Canary 2) or later.
+* Apps using MMKV can target: HarmonyOS Next (3.0.0.13) or later (API 12).
 * ARM64 & x86_64 architecture.
 * DevEco Studio NEXT Developer Beta1 (5.0.3.100) or later.
 
@@ -37,7 +37,7 @@ Or, you can add it to your project manually.
 
   ```json
   "dependencies": {
-      "@tencent/mmkv": "1.3.5",
+      "@tencent/mmkv": "~2.0.2",
   }
   ```
 * Then run
@@ -89,6 +89,11 @@ export default class EntryAbility extends UIAbility {
     mmkv.encodeBytes('bytes', arrayBuffer);
     let bytes = mmkv.decodeBytes('bytes');
     console.info('bytes = ', ArrayBufferToString(bytes));
+
+    let arr = new Uint8Array([0, 255, 1, 255]);
+    mmkv.encodeTypedArray('uint8-array', arr);
+    let newUI8Arr = kv.decodeUint8Array('uint8-array');
+    console.info('uint8-array = ', newUI8Arr);
     ```
 
     As you can see, MMKV is quite easy to use.
@@ -96,10 +101,10 @@ export default class EntryAbility extends UIAbility {
 * **Deleting & Querying**:
 
     ```js
-    mmkv.removeValue('bool');
+    mmkv.removeValueForKey('bool');
     console.info('contains "bool"', mmkv.containsKey('bool'));
 
-    mmkv.removeValues(['int32', 'int']);
+    mmkv.removeValuesForKeys(['int32', 'int']);
     console.info('all keys: ', mmkv.allKeys().join());
     ```
 
@@ -124,7 +129,7 @@ export default class EntryAbility extends UIAbility {
   - `boolean, number, bigint, string`
 
 * Classes & Collections:
-  - `boolean[], number[], string[], ArrayBuffer`
+  - `boolean[], number[], string[], ArrayBuffer, TypedArray`
 
 ### Log
 
@@ -172,7 +177,7 @@ Due to the current limitation of NAPI runtime, we **can't efficiently** redirect
     let appCtx = this.context.getApplicationContext();
     let rootDir = appCtx.filesDir + '/mmkv_2';
     let cacheDir = appCtx.cacheDir;
-    MMKV.initialize(rootDir, cacheDir);
+    MMKV.initializeWithPath(rootDir, cacheDir);
     ```
 
 * You can even customize any MMKV instance's location:

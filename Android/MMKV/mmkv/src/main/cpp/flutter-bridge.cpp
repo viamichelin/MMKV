@@ -18,12 +18,12 @@
  * limitations under the License.
  */
 
-#include "MMKVPredef.h"
+#include <MMKV/MMKVPredef.h>
 
 #ifndef MMKV_DISABLE_FLUTTER
 
-#    include "MMKV.h"
-#    include "MMKVLog.h"
+#    include <MMKV/MMKV.h>
+#    include <MMKV/MMKVLog.h>
 #    include <cstdint>
 #    include <string>
 
@@ -35,11 +35,23 @@ extern int g_android_api;
 extern string g_android_tmpDir;
 }
 
+#    ifdef MMKV_EXPORT
+#       undef MMKV_EXPORT
+#    endif
 #    define MMKV_EXPORT extern "C" __attribute__((visibility("default"))) __attribute__((used))
 
-MMKV_EXPORT void mmkvInitialize_v1(const char *rootDir, const char *cacheDir, int32_t sdkInt, int32_t logLevel) {
+using LogCallback_t = void (*)(uint32_t level, const char *file, int32_t line, const char *funcname, const char *message);
+LogCallback_t g_logCallback = nullptr;
+
+static void myLogHandler(MMKVLogLevel level, const char *file, int line, const char *function, MMKVLog_t message) {
+    if (g_logCallback) {
+        g_logCallback(level, file, line, function, message.c_str());
+    }
+}
+
+MMKV_EXPORT void *mmkvInitialize_v2(const char *rootDir, const char *cacheDir, int32_t sdkInt, int32_t logLevel, LogCallback_t callback) {
     if (!rootDir) {
-        return;
+        return nullptr;
     }
     if (cacheDir) {
         g_android_tmpDir = string(cacheDir);
@@ -52,11 +64,21 @@ MMKV_EXPORT void mmkvInitialize_v1(const char *rootDir, const char *cacheDir, in
     MMKVInfo("current API level = %d, libc++_shared=?", g_android_api);
 #endif
 
-    MMKV::initializeMMKV(rootDir, (MMKVLogLevel) logLevel);
+    if (callback) {
+        g_logCallback = callback;
+        MMKV::initializeMMKV(rootDir, (MMKVLogLevel) logLevel, myLogHandler);
+    } else {
+        MMKV::initializeMMKV(rootDir, (MMKVLogLevel) logLevel);
+    }
+    return (void *) MMKV::getRootDir().c_str();
+}
+
+MMKV_EXPORT void mmkvInitialize_v1(const char *rootDir, const char *cacheDir, int32_t sdkInt, int32_t logLevel) {
+    mmkvInitialize_v2(rootDir, cacheDir, sdkInt, logLevel, nullptr);
 }
 
 MMKV_EXPORT void mmkvInitialize(const char *rootDir, int32_t logLevel) {
-    mmkvInitialize_v1(rootDir, nullptr, 0, logLevel);
+    mmkvInitialize_v2(rootDir, nullptr, 0, logLevel, nullptr);
 }
 
 MMKV_EXPORT void *getMMKVWithID(const char *mmapID, int32_t mode, const char *cryptKey, const char *rootPath, size_t expectedCapacity) {
@@ -89,6 +111,10 @@ MMKV_EXPORT void *getMMKVWithID(const char *mmapID, int32_t mode, const char *cr
     }
 
     return kv;
+}
+
+MMKV_EXPORT void *getMMKVWithID2(const char *mmapID, int32_t mode, const char *cryptKey, const char *rootPath, size_t expectedCapacity, bool fromNameSpace) {
+    return getMMKVWithID(mmapID, mode, cryptKey, rootPath, expectedCapacity);
 }
 
 MMKV_EXPORT void *getDefaultMMKV(int32_t mode, const char *cryptKey) {
@@ -564,6 +590,77 @@ MMKV_EXPORT bool removeStorage(const char *mmapID, const char *rootPath) {
         }
     }
     return MMKV::removeStorage(mmapID, nullptr);
+}
+
+MMKV_EXPORT bool isMultiProcess(void *handle) {
+    MMKV *kv = static_cast<MMKV *>(handle);
+    if (kv) {
+        return kv->isMultiProcess();
+    }
+    return false;
+}
+
+MMKV_EXPORT bool isReadOnly(void *handle) {
+    MMKV *kv = static_cast<MMKV *>(handle);
+    if (kv) {
+        return kv->isReadOnly();
+    }
+    return false;
+}
+
+using ErrorCallback_t = int (*)(const char *mmapID, int32_t errorType);
+static ErrorCallback_t g_errorCallback = nullptr;
+
+static MMKVRecoverStrategic myErrorHandler(const std::string &mmapID, MMKVErrorType errorType) {
+    if (g_errorCallback) {
+        return (MMKVRecoverStrategic) g_errorCallback(mmapID.c_str(), errorType);
+    }
+    return OnErrorDiscard;
+}
+
+MMKV_EXPORT void registerErrorHandler(ErrorCallback_t callback) {
+    g_errorCallback = callback;
+    if (callback) {
+        MMKV::registerErrorHandler(myErrorHandler);
+    } else {
+        MMKV::unRegisterErrorHandler();
+    }
+}
+
+using ContenctChangeCallback_t = void (*)(const char *mmapID);
+static ContenctChangeCallback_t g_contentChanceCallback = nullptr;
+
+static void myContentChangeHandler(const std::string &mmapID) {
+    if (g_contentChanceCallback) {
+        g_contentChanceCallback(mmapID.c_str());
+    }
+}
+
+MMKV_EXPORT void registerContentChangeNotify(ContenctChangeCallback_t callback) {
+    g_contentChanceCallback = callback;
+    if (callback) {
+        MMKV::registerContentChangeHandler(myContentChangeHandler);
+    } else {
+        MMKV::unRegisterContentChangeHandler();
+    }
+}
+
+MMKV_EXPORT void checkContentChanged(void *handle) {
+    MMKV *kv = static_cast<MMKV *>(handle);
+    if (kv) {
+        kv->checkContentChanged();
+    }
+}
+
+MMKV_EXPORT bool getNameSpace(const char *rootPath) {
+    if (rootPath) {
+        auto root = string(rootPath);
+        if (!root.empty()) {
+            MMKV::nameSpace(root);
+            return true;
+        }
+    }
+    return false;
 }
 
 #endif // MMKV_DISABLE_FLUTTER

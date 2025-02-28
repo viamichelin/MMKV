@@ -1,4 +1,162 @@
 # MMKV Change Log
+## v2.1.0 / 2025-02-18
+Happy Chinese New Year!  
+This is a **breaking change version for the Android/OHOS** platform. Read the change log bellow and upgrade carefully.
+### Changes for All platforms
+* Add the `NameSpace` feature that easily supports customizing a root directory.
+* Add protection from bad disk records of MMKV files.
+* Fix FileLock not being unlocked on destruction.
+* Improve directory creation on `ReadOnly` mode.
+
+### Android
+* **Breaking change**: Migrate legacy MMKV in a custom directory to normal MMKV. Historically Android/OHOS mistakenly use mmapKey as mmapID, which will be problematic with the `NameSpace` feature. Starting from v2.1.0, MMKV will try to migrate them back to normal when possible.  
+It's highly recommended that you **upgrade to v2.0.2/v1.3.11 first** with **forward support** of normal MMKV in a custom directory.
+* Supports using MMKV directly in C++ code.
+* Improve inter-process locking by using `F_OFD_SETLK` instead of `F_SETLK`.
+* Add *experimental* protection from bad disk records of MMKV files.
+
+### HarmonyOS NEXT
+* **Breaking change**: Migrate legacy MMKV in a custom directory to normal MMKV. Historically Android/OHOS mistakenly use mmapKey as mmapID, which will be problematic with the `NameSpace` feature. Starting from v2.1.0, MMKV will try to migrate them back to normal when possible.  
+It's highly recommended that you **upgrade to v2.0.2/v1.3.11 first** with **forward support** of normal MMKV in a custom directory.
+* Supports using MMKV directly in C++ code.
+* Improve inter-process locking by using `F_OFD_SETLK` instead of `F_SETLK`.
+* Add *experimental* protection from bad disk records of MMKV files.
+
+### iOS/macOS
+* Upgrade to iOS 13, macOS 10.15, and watchOS 6 to support the `NameSpace` functionality.
+* Supports using MMKV directly in C++ code.
+* Drop the background `mlock()` protection given that we are iOS 13+.
+* Add *tested* protection from bad disk records of MMKV files.
+* Fix a package error when using MMKV by submodule.
+
+### Flutter
+* Remove unused imports and fix deprecated implementations. 
+* Support flutter 3.29.
+
+### Win32
+* Add *tested* protection from bad disk records of MMKV files.
+
+### POSIX
+* Improve inter-process locking by using `F_OFD_SETLK` instead of `F_SETLK`.
+* Add *experimental* protection from bad disk records of MMKV files.
+* Fix a compile error on the GNU toolchain.
+
+### Golang
+* Fix a link error in the armv8 arch.
+* Improve multi-platform building.
+
+## v2.0.2 / 2024-12-27
+Mary holiday and a happy new year!
+### Changes for All platforms
+* Fix a bug that MMKV might fail to backup/restore across different filesystems.
+* Add protection from invalid value size of auto-key-expire mmkv.
+
+### Android
+* If the running App is 32-bit only, warn about it (by throwing `UnsupportedArchitectureException`) before trying to load native lib.
+* Add forward support for the correct filename with a custom root path.
+
+### HarmonyOS NEXT
+* Obfuscation fully supported.
+* Use atomic file rename on OHOS.
+* Add forward support for the correct filename with a custom root path.
+
+### Win32
+* Only `mmap()` on `ftruncate()`/`zeroFillFile()` failure iff we have a valid file mapping before.
+
+## v2.0.1 / 2024-11-12
+**This is a hotfix release.**
+### Changes for All platforms
+* Fix a bug that might cause MMKV to become dead-locked for other threads after decoding container-type values. The affected platforms and value types are listed below. So don't be surprised if you find no update on the unaffected platforms.
+
+### HarmonyOS NEXT
+* Fix a bug that MMKV might become dead-locked for other threads after `decodeStringSet()` / `decodeNumberSet` / `decodeBoolSet` or decoding `TypedArray`.
+
+### Flutter
+* Fix the bug on HarmonyOS NEXT listed above. A version named v2.0.1 was added to fix the Android version conflict between the LTS series & v2.0. Thanks to the federated plugins framework, only the underlying `mmkv_ohos` plugin is upgraded, the `mmkv` plugin stays the same.
+
+### POSIX
+* Fix a bug that MMKV might become dead-locked for other threads after decoding `std::vector<T>` or `std::span<T>` values.
+
+## v2.0.0 / 2024-10-21
+**This release is a breaking change release, especially for Android.**
+### Changes for All platforms
+* Add **readonly mode** support.
+* Fix a compile error when `MMKV_DISABLE_CRYPT` is defined and MMKV is built by source in DEBUG.
+
+### Android
+* Support 16K page size for Android 15.
+* Drop the support of **32-bit ABI**.
+* Bump the mini **SDK level to API 23**.
+
+### iOS / macOS
+* Add Mac Catalyst support
+
+### Flutter
+* Add add log/error/content-change callback.
+
+### HarmonyOS NEXT
+* Add add log/error/content-change callback.
+* Support obfuscation. For the time being, you will have to manually copy the content of MMKV's [consumer-rules.txt](https://github.com/Tencent/MMKV/blob/master/OpenHarmony/MMKV/consumer-rules.txt) into your App's obfuscation-rules.txt.
+
+### Win32
+* Replace `random()` with `rand()` to fix a compile error.
+
+## v1.3.9 / 2024-07-26
+**This is a Long Term Support (LTS) release.**
+### Changes for All platforms
+* Fix a data corruption bug on an encrypted MMKV with only one key value stored.
+* Make encryption more resilient from brute force cracking.
+* Fix a bug that `pthread_mutex` is not being destroyed correctly.
+
+### Android
+* Use an alternative way to get the process name to avoid potential App review issues.
+* Upgrade to NDK 26.3.11579264.
+
+### Flutter
+* Add support for HarmonyOS NEXT. In fact, a temp version named v1.3.8 adds this support with the native lib of v1.3.7. To avoid potential confusion, bump both versions to v1.3.9.
+
+## v1.3.7 / 2024-07-08
+### Android & Flutter
+**This Long Term Support (LTS) release** primarily reintroduces support for the ARMv7 architecture and lowers the minimum SDK version requirement to 21. Please note that only critical bug fixes will be applied to the 1.3.x series. New features will be introduced in version 2.0 and later, which will discontinue support for 32-bit architectures and raise the minimum SDK version requirement to 23.
+
+### For other platforms
+This is exactly the same as v1.3.6, so don't be surprised if you don't see this version in CocoaPods or OHPM.
+
+## v1.3.6 / 2024-07-05
+### Changes for All platforms
+* The Core library now upgrades the C++ standard from C++17 to C++20 to make the most of morden C++ feature such as `Concept` & unordered containers with `std::string_view` as key. From now on, if you build MMKV by source (iOS, Windows, POSIX, etc), you will need a C++ compiler that supports the C++20 standard. If you only use MMKV in binary (Android, OHOS, etc), this upgrade of the C++ compiler is not required.
+* The key type changes from `std::string` to `std::string_view`, to avoid unnecessary string construction and destruction when the key is a raw string.
+
+### Android
+* Use the latest ashmem API if possible.
+* Use the latest API to get the device API level.
+
+### Flutter
+* MMKV will try to load libmmkv.so before Dart code, to reduce the error of loading library in Android.
+
+### HarmonyOS NEXT
+* Fix a bug that a `String` value might get truncated on encoding.
+* MMKV returns `undefined` when a key does not exist, previously a default value of the type (`false` for `boolean`, `0` for `number`, etc) is returned.
+* Add the feature to encode/decode a `float` value.
+* Add the feature to encode/decode a `TypedArray` value.
+* Support encoding a part of an `ArrayBuffer`.
+
+### iOS/macOS
+* Hide the default `NSObject.initialize()` from Swift/ObjC to prevent potential misuse.
+
+### POSIX
+* Support encode/decode `std::vector<T>` or `std::span<T>` values, with T as primitive types.
+* Fix a compile error on Linux env.
+* Fix a compile error on the GNU compiler.
+* Fix a compile error with some old version of zlib (on CentOS).
+
+### Python
+* Python now runs on Windows. Check out the latest [wiki](https://github.com/Tencent/MMKV/wiki/python_setup) for instructions.
+
+### Windows
+* Support encode/decode `std::vector<T>` or `std::span<T>` values, with T as primitive types.
+* Python now runs on Windows. Check out the latest [wiki](https://github.com/Tencent/MMKV/wiki/python_setup) for instructions.
+
 ## v1.3.5 / 2024-04-24
 ### HarmonyOS NEXT
 * This is the first official support of HarmonyOS NEXT.

@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-#import <MMKV/MMKV.h>
+#import "flutter-bridge.h"
 #import <stdint.h>
 #import <string>
 
@@ -27,7 +27,22 @@
 
 using namespace std;
 
-MMKV_EXPORT void *getMMKVWithID(const char *mmapID, uint32_t mode, const char *cryptKey, const char *rootPath, size_t expectedCapacity) {
+MMKV_EXPORT void *mmkvInitialize(const char *rootDir, const char *groupDir, int32_t logLevel, LogCallback_t logCallback) {
+    auto handler = [MyMMKVHandler getHandler];
+    handler.logCallback = logCallback;
+
+    NSString *root = [NSString stringWithUTF8String:rootDir];
+    NSString *ret = nil;
+    if (groupDir) {
+        NSString *group = [NSString stringWithUTF8String:groupDir];
+        ret = [MMKV initializeMMKV:root groupDir:group logLevel:(MMKVLogLevel) logLevel handler:handler];
+    } else {
+        ret = [MMKV initializeMMKV:root logLevel:(MMKVLogLevel) logLevel handler:handler];
+    }
+    return (void*) ret.UTF8String;
+}
+
+MMKV_EXPORT void *getMMKVWithID2(const char *mmapID, uint32_t mode, const char *cryptKey, const char *rootPath, size_t expectedCapacity, bool isNameSpace) {
     MMKV *kv = nil;
     if (!mmapID) {
         return (__bridge void *) kv;
@@ -41,7 +56,12 @@ MMKV_EXPORT void *getMMKVWithID(const char *mmapID, uint32_t mode, const char *c
             auto cryptKeyData = [crypt dataUsingEncoding:NSUTF8StringEncoding];
             if (rootPath) {
                 auto path = [NSString stringWithUTF8String:rootPath];
-                kv = [MMKV mmkvWithID:str cryptKey:cryptKeyData rootPath:path expectedCapacity:expectedCapacity];
+                if (isNameSpace) {
+                    auto ns = [MMKV nameSpace:path];
+                    kv = [ns mmkvWithID:str cryptKey:cryptKeyData expectedCapacity:expectedCapacity];
+                } else {
+                    kv = [MMKV mmkvWithID:str cryptKey:cryptKeyData rootPath:path expectedCapacity:expectedCapacity];
+                }
             } else {
                 kv = [MMKV mmkvWithID:str cryptKey:cryptKeyData mode:(MMKVMode) mode];
             }
@@ -51,13 +71,22 @@ MMKV_EXPORT void *getMMKVWithID(const char *mmapID, uint32_t mode, const char *c
     if (!done) {
         if (rootPath) {
             auto path = [NSString stringWithUTF8String:rootPath];
-            kv = [MMKV mmkvWithID:str rootPath:path expectedCapacity:expectedCapacity];
+            if (isNameSpace) {
+                auto ns = [MMKV nameSpace:path];
+                kv = [ns mmkvWithID:str expectedCapacity:expectedCapacity];
+            } else {
+                kv = [MMKV mmkvWithID:str rootPath:path expectedCapacity:expectedCapacity];
+            }
         } else {
             kv = [MMKV mmkvWithID:str mode:(MMKVMode) mode];
         }
     }
 
     return (__bridge void *) kv;
+}
+
+MMKV_EXPORT void *getMMKVWithID(const char *mmapID, uint32_t mode, const char *cryptKey, const char *rootPath, size_t expectedCapacity) {
+    return getMMKVWithID2(mmapID, mode, cryptKey, rootPath, expectedCapacity, false);
 }
 
 MMKV_EXPORT int64_t getDefaultMMKV(int /*mode*/, const char *cryptKey) {
@@ -521,39 +550,47 @@ MMKV_EXPORT bool MMKV_FUNC(removeStorage)(const char *mmapID, const char *rootDi
     return [MMKV removeStorage:strID rootPath:nil];
 }
 
-/* Looks like Dart:ffi's async callback not working perfectly
- * We don't support them for the moment.
- * https://github.com/dart-lang/sdk/issues/37022
+MMKV_EXPORT bool MMKV_FUNC(isMultiProcess)(const void *handle) {
+    MMKV *kv = (__bridge MMKV *) handle;
+    if (kv) {
+        return [kv isMultiProcess];
+    }
+    return false;
+}
+
+MMKV_EXPORT bool MMKV_FUNC(isReadOnly)(const void *handle) {
+    MMKV *kv = (__bridge MMKV *) handle;
+    if (kv) {
+        return [kv isReadOnly];
+    }
+    return false;
+}
 
 #pragma mark - callback
 
-using ErrorCallback_t = uint32_t (*)(const char *mmapID);
-using ContenctChangeCallback_t = void (*)(const char *mmapID);
-using LogCallback_t = void (*)(uint32_t level, const char *file, int32_t line, const char *funcname, const char *message);
-
-@interface MyMMKVHandler : NSObject<MMKVHandler>
-
-@property (atomic, assign) ErrorCallback_t lengthErrorCallback;
-@property (atomic, assign) ErrorCallback_t crcErrorCallback;
-@property (atomic, assign) LogCallback_t logCallback;
-@property (atomic, assign) ContenctChangeCallback_t contenctChangeCallback;
-
-@end
-
 @implementation MyMMKVHandler
 
++ (MyMMKVHandler *)getHandler {
+    static MyMMKVHandler *g_mmkvHandler = nullptr;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        g_mmkvHandler = [[MyMMKVHandler alloc] init];
+    });
+    return g_mmkvHandler;
+}
+
 - (MMKVRecoverStrategic)onMMKVCRCCheckFail:(NSString *)mmapID {
-    if (self.crcErrorCallback) {
-        return (MMKVRecoverStrategic)self.crcErrorCallback(mmapID.UTF8String);
+    if (self.errorCallback) {
+        return (MMKVRecoverStrategic)self.errorCallback(mmapID.UTF8String, MMKVCRCCheckFail);
     }
     return MMKVOnErrorDiscard;
 }
 
-// by default MMKV will discard all datas on file length mismatch
+// by default MMKV will discard all data on file length mismatch
 // return `MMKVOnErrorRecover` to recover any data on the file
 - (MMKVRecoverStrategic)onMMKVFileLengthError:(NSString *)mmapID {
-    if (self.lengthErrorCallback) {
-        return (MMKVRecoverStrategic)self.lengthErrorCallback(mmapID.UTF8String);
+    if (self.errorCallback) {
+        return (MMKVRecoverStrategic)self.errorCallback(mmapID.UTF8String, MMKVFileLength);
     }
     return MMKVOnErrorDiscard;
 }
@@ -590,42 +627,28 @@ using LogCallback_t = void (*)(uint32_t level, const char *file, int32_t line, c
 
 @end
 
-MyMMKVHandler *getHandler() {
-    static MyMMKVHandler *g_mmkvHandler = nullptr;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        g_mmkvHandler = [[MyMMKVHandler alloc] init];
-        [MMKV registerHandler:g_mmkvHandler];
-    });
-    return g_mmkvHandler;
+MMKV_EXPORT void MMKV_FUNC(registerErrorHandler)(ErrorCallback_t callback) {
+    [MyMMKVHandler getHandler].errorCallback = callback;
 }
 
-MMKV_EXPORT void setWantsLogRedirect(LogCallback_t callback) {
-    getHandler().logCallback = callback;
+MMKV_EXPORT void MMKV_FUNC(registerContentChangeNotify)(ContenctChangeCallback_t callback) {
+    [MyMMKVHandler getHandler].contenctChangeCallback = callback;
 }
 
-MMKV_EXPORT void setWantsHandleLengthError(ErrorCallback_t callback) {
-    getHandler().lengthErrorCallback = callback;
-}
-
-MMKV_EXPORT void setWantsHandleCRCError(ErrorCallback_t callback) {
-    getHandler().crcErrorCallback = callback;
-}
-
-MMKV_EXPORT void setWantsContentChangeNotify(ContenctChangeCallback_t callback) {
-    getHandler().contenctChangeCallback = callback;
-}
-
-MMKV_EXPORT void checkContentChanged(const void *handle) {
+MMKV_EXPORT void MMKV_FUNC(checkContentChanged)(const void *handle) {
     MMKV *kv = (__bridge MMKV*)handle;
     if (kv) {
         [kv checkContentChanged];
     }
 }
-*/
 
-@interface MMKVDummy : NSObject
-@end
-
-@implementation MMKVDummy
-@end
+MMKV_EXPORT bool MMKV_FUNC(getNameSpace)(const char *rootPath) {
+    if (rootPath) {
+        auto root = [NSString stringWithUTF8String:rootPath];
+        if (root.length > 0) {
+            [MMKV nameSpace:root];
+            return true;
+        }
+    }
+    return false;
+}

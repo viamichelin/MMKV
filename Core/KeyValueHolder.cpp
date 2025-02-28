@@ -131,7 +131,7 @@ uint32_t KeyValueHolderCrypt::realValueSize() const {
 
 // get decrypt data with [position, -1)
 static MMBuffer decryptBuffer(AESCrypt &crypter, const MMBuffer &inputBuffer, size_t position) {
-    static size_t smallBuffer[16 / sizeof(size_t)];
+    size_t smallBuffer[16 / sizeof(size_t)];
     auto basePtr = (uint8_t *) inputBuffer.getPtr();
     auto ptr = basePtr;
     for (size_t index = sizeof(smallBuffer); index < position; index += sizeof(smallBuffer)) {
@@ -221,7 +221,7 @@ void KeyValueHolderCrypt::testAESToMMBuffer() {
                                 kvHolder.cryptStatus);
     auto value = kvHolder.toMMBuffer(encryptText, &decrypt);
 #    ifdef MMKV_APPLE
-    MMKVInfo("testAESToMMBuffer: %@", CodedInputData((char *) value.getPtr(), value.length()).readString());
+    MMKVInfo("testAESToMMBuffer: %@", CodedInputData((char *) value.getPtr(), value.length()).readNSString());
 #    else
     MMKVInfo("testAESToMMBuffer: %s", CodedInputData((char *) value.getPtr(), value.length()).readString().c_str());
 #    endif

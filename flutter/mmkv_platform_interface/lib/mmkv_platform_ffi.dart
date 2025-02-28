@@ -23,7 +23,8 @@ import "package:ffi/ffi.dart";
 import "mmkv_platform_interface.dart";
 
 /// A helper class to ease the implementation of MMKV platform plugin in FFI
-abstract base class MMKVPluginPlatformFFI extends MMKVPluginPlatform {
+// abstract base
+class MMKVPluginPlatformFFI extends MMKVPluginPlatform {
   /// tells which dylib to lookup for function pointer
   DynamicLibrary nativeLib() {
     throw UnimplementedError();
@@ -38,6 +39,13 @@ abstract base class MMKVPluginPlatformFFI extends MMKVPluginPlatform {
   Pointer<Void> Function(Pointer<Utf8> mmapID, int, Pointer<Utf8> cryptKey, Pointer<Utf8> rootDir, int expectedCapacity) getMMKVWithIDFunc() {
     return nativeLib()
         .lookup<NativeFunction<Pointer<Void> Function(Pointer<Utf8>, Uint32, Pointer<Utf8>, Pointer<Utf8>, Uint32)>>("getMMKVWithID")
+        .asFunction();
+  }
+
+  @override
+  Pointer<Void> Function(Pointer<Utf8> mmapID, int, Pointer<Utf8> cryptKey, Pointer<Utf8> rootDir, int expectedCapacity, int isNameSpace) getMMKVWithIDFunc2() {
+    return nativeLib()
+        .lookup<NativeFunction<Pointer<Void> Function(Pointer<Utf8>, Uint32, Pointer<Utf8>, Pointer<Utf8>, Uint32, Int8)>>("getMMKVWithID2")
         .asFunction();
   }
 
@@ -292,5 +300,35 @@ abstract base class MMKVPluginPlatformFFI extends MMKVPluginPlatform {
   @override
   int Function(Pointer<Utf8> mmapID, Pointer<Utf8> rootPath) removeStorageFunc() {
     return nativeLib().lookup<NativeFunction<Int8 Function(Pointer<Utf8>, Pointer<Utf8>)>>(nativeFuncName("removeStorage")).asFunction();
+  }
+
+  @override
+  bool Function(Pointer<Void>) isMultiProcessFunc() {
+    return nativeLib().lookup<NativeFunction<Bool Function(Pointer<Void>)>>(nativeFuncName("isMultiProcess")).asFunction();
+  }
+
+  @override
+  bool Function(Pointer<Void>) isReadOnlyFunc() {
+    return nativeLib().lookup<NativeFunction<Bool Function(Pointer<Void>)>>(nativeFuncName("isReadOnly")).asFunction();
+  }
+
+  @override
+  ErrorCallbackRegister registerErrorHandlerFunc() {
+    return nativeLib().lookup<NativeFunction<ErrorCallbackRegisterWrap>>(nativeFuncName("registerErrorHandler")).asFunction();
+  }
+
+  @override
+  ContentCallbackRegister registerContentHandlerFunc() {
+    return nativeLib().lookup<NativeFunction<ContentCallbackRegisterWrap>>(nativeFuncName("registerContentChangeNotify")).asFunction();
+  }
+
+  @override
+  void Function(Pointer<Void> p1) checkContentChangedFunc() {
+    return nativeLib().lookup<NativeFunction<Void Function(Pointer<Void>)>>(nativeFuncName("checkContentChanged")).asFunction();
+  }
+
+  @override
+  bool Function(Pointer<Utf8> rootPath) getNameSpaceFunc() {
+    return nativeLib().lookup<NativeFunction<Bool Function(Pointer<Utf8>)>>(nativeFuncName("getNameSpace")).asFunction();
   }
 }

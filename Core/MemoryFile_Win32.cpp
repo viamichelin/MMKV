@@ -29,8 +29,10 @@
 #    include "ThreadLock.h"
 #    include <cassert>
 #    include <strsafe.h>
+#    include <filesystem>
 
 using namespace std;
+namespace fs = std::filesystem;
 
 namespace mmkv {
 
@@ -43,7 +45,7 @@ File::File(MMKVPath_t path, OpenFlag flag) : m_path(std::move(path)), m_fd(INVAL
 
 static pair<int, int> OpenFlag2NativeFlag(OpenFlag flag) {
     int access = 0, create = OPEN_EXISTING;
-    if (flag & OpenFlag::ReadWrite) {
+    if ((flag & OpenFlagRWMask) == OpenFlag::ReadWrite) {
         access = (GENERIC_READ | GENERIC_WRITE);
     } else if (flag & OpenFlag::ReadOnly) {
         access |= GENERIC_READ;
@@ -70,10 +72,10 @@ bool File::open() {
     m_fd = CreateFile(m_path.c_str(), pair.first, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                       pair.second, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (!isFileValid()) {
-        MMKVError("fail to open:[%ls], %d", m_path.c_str(), GetLastError());
+        MMKVError("fail to open:[%ls], flag %x, error %d", m_path.c_str(), m_flag, GetLastError());
         return false;
     }
-    MMKVInfo("open fd[%p], %ls", m_fd, m_path.c_str());
+    MMKVInfo("open fd[%p], flag %x, %ls", m_fd, m_flag, m_path.c_str());
     return true;
 }
 
@@ -94,11 +96,12 @@ size_t File::getActualFileSize() const {
     return size;
 }
 
-MemoryFile::MemoryFile(MMKVPath_t path, size_t expectedCapacity)
-    : m_diskFile(std::move(path), OpenFlag::ReadWrite | OpenFlag::Create)
+MemoryFile::MemoryFile(MMKVPath_t path, size_t expectedCapacity, bool readOnly)
+    : m_diskFile(std::move(path), readOnly ? OpenFlag::ReadOnly : (OpenFlag::ReadWrite | OpenFlag::Create))
     , m_fileMapping(nullptr)
     , m_ptr(nullptr)
-    , m_size(0) {
+    , m_size(0)
+    , m_readOnly(readOnly) {
     reloadFromFile(expectedCapacity);
 }
 
@@ -109,6 +112,10 @@ bool MemoryFile::truncate(size_t size) {
     if (size == m_size) {
         return true;
     }
+    if (m_readOnly) {
+        // truncate readonly file not allow
+        return false;
+    }
 
     auto oldSize = m_size;
     m_size = size;
@@ -117,7 +124,11 @@ bool MemoryFile::truncate(size_t size) {
         m_size = ((m_size / DEFAULT_MMAP_SIZE) + 1) * DEFAULT_MMAP_SIZE;
     }
 
+    // Win32 won't ftruncate a file if there's active file mmapping/handle, we have to unmmap/close ahead
+    bool needMMapOnFailure = false;
     if (m_ptr) {
+        // if we have a valid file mapping before, we should restore it regardless
+        needMMapOnFailure = true;
         if (!UnmapViewOfFile(m_ptr)) {
             MMKVError("fail to munmap [%ls], %d", m_diskFile.m_path.c_str(), GetLastError());
         }
@@ -131,14 +142,18 @@ bool MemoryFile::truncate(size_t size) {
     if (!ftruncate(m_diskFile.getFd(), m_size)) {
         MMKVError("fail to truncate [%ls] to size %zu", m_diskFile.m_path.c_str(), m_size);
         m_size = oldSize;
-        mmap();
+        if (needMMapOnFailure) {
+            mmap();
+        }
         return false;
     }
     if (m_size > oldSize) {
         if (!zeroFillFile(m_diskFile.getFd(), oldSize, m_size - oldSize)) {
             MMKVError("fail to zeroFile [%ls] to size %zu", m_diskFile.m_path.c_str(), m_size);
             m_size = oldSize;
-            mmap();
+            if (needMMapOnFailure) {
+                mmap();
+            }
             return false;
         }
     }
@@ -151,6 +166,10 @@ bool MemoryFile::truncate(size_t size) {
 }
 
 bool MemoryFile::msync(SyncFlag syncFlag) {
+    if (m_readOnly) {
+        // there's no point in msync() readonly memory
+        return true;
+    }
     if (m_ptr) {
         if (FlushViewOfFile(m_ptr, m_size)) {
             if (syncFlag == MMKV_SYNC) {
@@ -168,20 +187,21 @@ bool MemoryFile::msync(SyncFlag syncFlag) {
 }
 
 bool MemoryFile::mmap() {
-    m_fileMapping = CreateFileMapping(m_diskFile.getFd(), nullptr, PAGE_READWRITE, 0, 0, nullptr);
+    auto mode = m_readOnly ? PAGE_READONLY : PAGE_READWRITE;
+    m_fileMapping = CreateFileMapping(m_diskFile.getFd(), nullptr, mode, 0, 0, nullptr);
     if (!m_fileMapping) {
-        MMKVError("fail to CreateFileMapping [%ls], %d", m_diskFile.m_path.c_str(), GetLastError());
+        MMKVError("fail to CreateFileMapping [%ls], mode %x, %d", m_diskFile.m_path.c_str(), mode, GetLastError());
         return false;
     } else {
-        m_ptr = (char *) MapViewOfFile(m_fileMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        auto viewMode = m_readOnly ? FILE_MAP_READ : FILE_MAP_ALL_ACCESS;
+        m_ptr = (char*)MapViewOfFile(m_fileMapping, viewMode, 0, 0, 0);
         if (!m_ptr) {
-            MMKVError("fail to mmap [%ls], %d", m_diskFile.m_path.c_str(), GetLastError());
+            MMKVError("fail to mmap [%ls], mode %x, %d", m_diskFile.m_path.c_str(), viewMode, GetLastError());
             return false;
         }
         MMKVInfo("mmap to address [%p], [%ls]", m_ptr, m_diskFile.m_path.c_str());
+        return true;
     }
-
-    return true;
 }
 
 void MemoryFile::reloadFromFile(size_t expectedCapacity) {
@@ -199,7 +219,7 @@ void MemoryFile::reloadFromFile(size_t expectedCapacity) {
         mmkv::getFileSize(m_diskFile.getFd(), m_size);
         size_t expectedSize = std::max<size_t>(DEFAULT_MMAP_SIZE, roundUp<size_t>(expectedCapacity, DEFAULT_MMAP_SIZE));
         // round up to (n * pagesize)
-        if (m_size < expectedSize || (m_size % DEFAULT_MMAP_SIZE != 0)) {
+        if (!m_readOnly && (m_size < expectedSize || (m_size % DEFAULT_MMAP_SIZE != 0))) {
             size_t roundSize = ((m_size / DEFAULT_MMAP_SIZE) + 1) * DEFAULT_MMAP_SIZE;;
             roundSize = std::max<size_t>(expectedSize, roundSize);
             truncate(roundSize);
@@ -228,6 +248,13 @@ size_t getPageSize() {
     SYSTEM_INFO system_info;
     GetSystemInfo(&system_info);
     return system_info.dwPageSize;
+}
+
+MMKVPath_t absolutePath(const MMKVPath_t& path) {
+    fs::path relative_path(path);
+    fs::path absolute_path = fs::absolute(relative_path);
+    fs::path normalized = fs::weakly_canonical(absolute_path);
+    return normalized.wstring();
 }
 
 bool isFileExist(const MMKVPath_t &nsFilePath) {
@@ -518,6 +545,29 @@ void walkInDir(const MMKVPath_t &dirPath,
     }
 
     FindClose(hFind);
+}
+
+bool isDiskOfMMAPFileCorrupted(MemoryFile *file, bool &needReportReadFail) {
+    // make sure the file is valid
+    __try {
+        auto data = *((uint32_t*) file->getMemory());
+        MMKVInfo("first byte of the file: 0x%x", data);
+    }
+    __except (GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        needReportReadFail = true;
+        DWORD errorCode = GetExceptionCode();
+        MMKVError("fail to mmap [%ls], %d", file->getPath().c_str(), errorCode);
+        return true;
+    }
+    return false;
+}
+
+bool deleteFile(const MMKVPath_t &path) {
+    if (!DeleteFile(path.c_str())) {
+        MMKVError("failed to delete file [%ls], %d", path.c_str(), GetLastError());
+        return false;
+    }
+    return true;
 }
 
 } // namespace mmkv

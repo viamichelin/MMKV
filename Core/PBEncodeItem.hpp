@@ -34,9 +34,17 @@ enum PBEncodeItemType {
     PBEncodeItemType_None,
     PBEncodeItemType_Data,
     PBEncodeItemType_Container,
-#ifndef MMKV_APPLE
     PBEncodeItemType_String,
-#else
+#ifdef MMKV_HAS_CPP20
+    PBEncodeItemType_Int32,
+    PBEncodeItemType_UInt32,
+    PBEncodeItemType_Int64,
+    PBEncodeItemType_UInt64,
+//    PBEncodeItemType_Bool,
+//    PBEncodeItemType_Float,
+//    PBEncodeItemType_Double,
+#endif // MMKV_HAS_CPP20
+#ifdef MMKV_APPLE
     PBEncodeItemType_NSString,
     PBEncodeItemType_NSData,
     PBEncodeItemType_NSDate,
@@ -49,9 +57,17 @@ struct PBEncodeItem {
     uint32_t valueSize;
     union {
         const MMBuffer *bufferValue;
-#ifndef MMKV_APPLE
+#ifdef MMKV_HAS_CPP20
+//        bool boolValue;
+        int32_t int32Value;
+        int64_t int64Value;
+        uint32_t uint32Value;
+        uint64_t uint64Value;
+#endif // MMKV_HAS_CPP20
+        //        float floatValue;
+//        double doubleValue;
         const std::string *strValue;
-#else
+#ifdef MMKV_APPLE
         void *objectValue;
         void *tmpObjectValue; // this object should be released on dealloc
 #endif
