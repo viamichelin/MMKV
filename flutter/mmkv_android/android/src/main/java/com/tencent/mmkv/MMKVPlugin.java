@@ -68,7 +68,9 @@ public class MMKVPlugin implements FlutterPlugin, MethodCallHandler {
 
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
-        channel.setMethodCallHandler(null);
+        if (channel != null) {
+            channel.setMethodCallHandler(null);
+        }
     }
 
     private static boolean isLibraryLoaded = false;
